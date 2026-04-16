@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './DemoClient.css';
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = '';
 
 function DemoClient() {
   const [apiKey, setApiKey] = useState(localStorage.getItem('demoApiKey') || '');
