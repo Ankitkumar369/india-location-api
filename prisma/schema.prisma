@@ -1,0 +1,186 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
+}
+
+// ============================================
+// LOCATION DATA TABLES (3NF Normalized)
+// ============================================
+
+model Country {
+  id        Int      @id @default(1)
+  name      String   @unique @default("India")
+  code      String   @default("IN")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  states    State[]
+
+  @@map("country")
+}
+
+model State {
+  id         Int      @id
+  name       String
+  code       String   // MDDS STC code
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  countryId  Int      @default(1)
+  country    Country  @relation(fields: [countryId], references: [id])
+
+  districts  District[]
+
+  @@index([name])
+  @@index([code])
+  @@map("state")
+}
+
+model District {
+  id              Int      @id
+  name            String
+  code            String   // MDDS DTC code
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  stateId         Int
+  state           State    @relation(fields: [stateId], references: [id])
+
+  subDistricts    SubDistrict[]
+
+  @@index([name])
+  @@index([stateId])
+  @@map("district")
+}
+
+model SubDistrict {
+  id          Int      @id
+  name        String
+  code        String   // MDDS Sub_DT code
+  createdAt  DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  districtId  Int
+  district    District @relation(fields: [districtId], references: [id])
+
+  villages    Village[]
+
+  @@index([name])
+  @@index([districtId])
+  @@map("sub_district")
+}
+
+model Village {
+  id              Int      @id @default(autoincrement())
+  name            String
+  code            String   @unique // MDDS PLCN code (unique identifier)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subDistrictId   Int
+  subDistrict      SubDistrict @relation(fields: [subDistrictId], references: [id])
+
+  @@index([name])
+  @@index([subDistrictId])
+  @@index([code])
+  @@map("village")
+}
+
+// ============================================
+// USER & AUTHENTICATION TABLES
+// ============================================
+
+model User {
+  id              Int       @id @default(autoincrement())
+  email           String    @unique
+  password        String    // hashed with bcrypt
+  name            String?
+  role            Role      @default(USER)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastLoginAt     DateTime?
+
+  apiKeys         ApiKey[]
+  stateAccess      UserStateAccess[]
+
+  @@index([email])
+  @@map("user")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+model ApiKey {
+  id              Int       @id @default(autoincrement())
+  keyId           String    @unique  // Public identifier (e.g., "ak_live_xxxxx")
+  keySecret       String    // Hashed secret for authentication
+  name            String    // Friendly name for the API key
+  plan            Plan      @default(FREE)
+  rateLimit       Int       @default(100)  // requests per day
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime?
+  lastUsedAt      DateTime?
+
+  userId          Int
+  user            User      @relation(fields: [userId], references: [id])
+
+  apiLogs         ApiLog[]
+
+  @@index([keyId])
+  @@index([userId])
+  @@map("api_key")
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PREMIUM
+  UNLIMITED
+}
+
+model UserStateAccess {
+  id        Int     @id @default(autoincrement())
+  userId    Int
+  user      User    @relation(fields: [userId], references: [id])
+  stateId   Int
+
+  @@unique([userId, stateId])
+  @@map("user_state_access")
+}
+
+// ============================================
+// API LOGGING & ANALYTICS
+// ============================================
+
+model ApiLog {
+  id          Int       @id @default(autoincrement())
+  keyId       String    // API key used
+  endpoint    String    // API endpoint called
+  method      String    // HTTP method
+  statusCode  Int       // Response status
+  responseMs  Int       // Response time in milliseconds
+  requestIp   String?   // Client IP
+  userAgent   String?   // Client user agent
+  queryParams Json?     // Search parameters used
+  createdAt   DateTime  @default(now())
+
+  apiKeyId    Int?
+  apiKey      ApiKey?   @relation(fields: [apiKeyId], references: [id])
+
+  @@index([keyId])
+  @@index([createdAt])
+  @@index([endpoint])
+  @@map("api_log")
+}
