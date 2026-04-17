@@ -1,45 +1,83 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import './Dashboard.css';
 
 const API_BASE = '';
-
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
 
 function Dashboard() {
   const [stats, setStats] = useState({ states: 0, districts: 0, subDistricts: 0, villages: 0 });
   const [stateData, setStateData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [apiKey, setApiKey] = useState(localStorage.getItem('apiKey') || '');
+  const [userApiKey, setUserApiKey] = useState(localStorage.getItem('userApiKey') || '');
 
   useEffect(() => {
-    fetchData();
-  }, [apiKey]);
+    initializeApiKey();
+  }, []);
+
+  useEffect(() => {
+    if (apiKey || userApiKey) {
+      fetchData();
+    }
+  }, [apiKey, userApiKey]);
+
+  const initializeApiKey = async () => {
+    const token = localStorage.getItem('authToken');
+    const existingUserApiKey = localStorage.getItem('userApiKey');
+
+    if (token && !existingUserApiKey) {
+      // Auto-create API key for logged-in user
+      try {
+        const res = await axios.post(`${API_BASE}/api/auth/api-key`, {
+          name: 'Dashboard Auto-Generated Key'
+        }, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        const newKey = res.data.keyId;
+        const newSecret = res.data.keySecret;
+
+        localStorage.setItem('userApiKey', newKey);
+        localStorage.setItem('userApiSecret', newSecret);
+        setUserApiKey(newKey);
+
+        // Also save to apiKey for dashboard use
+        setApiKey(newKey);
+      } catch (error) {
+        console.error('Failed to create API key:', error);
+      }
+    } else if (existingUserApiKey) {
+      setUserApiKey(existingUserApiKey);
+      setApiKey(existingUserApiKey);
+    } else {
+      setLoading(false);
+    }
+  };
 
   const fetchData = async () => {
-    if (!apiKey) {
+    const key = apiKey || userApiKey;
+    if (!key) {
       setLoading(false);
       return;
     }
 
     try {
-      // Fetch states
       const statesRes = await axios.get(`${API_BASE}/api/v1/states`, {
-        headers: { 'X-API-Key': apiKey }
+        headers: { 'X-API-Key': key }
       });
 
       const states = statesRes.data.data || [];
       setStateData(states);
 
-      // Calculate totals
       const districtCount = states.reduce((sum, s) => sum + (s.districtCount || 0), 0);
+      const subDistrictCount = states.reduce((sum, s) => sum + (s.subDistrictCount || 0), 0);
 
       setStats({
         states: states.length,
         districts: districtCount,
-        subDistricts: states.reduce((sum, s) => sum + (s.subDistrictCount || 0), 0),
-        villages: 502016 // Approximate from import
+        subDistricts: subDistrictCount,
+        villages: 502016
       });
 
       setLoading(false);
@@ -55,27 +93,15 @@ function Dashboard() {
     localStorage.setItem('apiKey', key);
   };
 
-  if (!apiKey) {
+  const currentKey = apiKey || userApiKey;
+
+  if (!currentKey) {
     return (
       <div className="dashboard">
         <div className="api-key-setup">
           <h2>Welcome to India Location API Dashboard</h2>
-          <p>Enter your API key to view analytics and test the API.</p>
-          <input
-            type="text"
-            placeholder="Enter API Key (ak_live_...)"
-            value={apiKey}
-            onChange={handleApiKeyChange}
-            className="api-key-input"
-          />
-          <div className="api-key-help">
-            <p>Don't have an API key?</p>
-            <ol>
-              <li>Register at /api/auth/register</li>
-              <li>Login at /api/auth/login</li>
-              <li>Create API key at /api/auth/api-key</li>
-            </ol>
-          </div>
+          <p>Please login to access the dashboard and API.</p>
+          <p className="hint">Use the Login/Register form above to get started.</p>
         </div>
       </div>
     );
@@ -99,7 +125,7 @@ function Dashboard() {
       <header className="dashboard-header">
         <h1>India Location API Dashboard</h1>
         <div className="api-key-display">
-          <span>API Key: {apiKey.substring(0, 15)}...</span>
+          <span>API Key: {currentKey.substring(0, 15)}...</span>
         </div>
       </header>
 
@@ -163,10 +189,6 @@ function Dashboard() {
               <span className="method get">GET</span>
               <span>/api/v1/autocomplete?q=...</span>
             </div>
-            <div className="endpoint-item">
-              <span className="method get">GET</span>
-              <span>/api/v1/location/:code</span>
-            </div>
           </div>
         </div>
       </div>
@@ -193,7 +215,7 @@ function Dashboard() {
                     className="api-btn"
                     onClick={() => {
                       navigator.clipboard.writeText(
-                        `curl -s "${API_BASE}/api/v1/states/${state.code}/districts" -H "X-API-Key: ${apiKey}"`
+                        `curl -s "${API_BASE}/api/v1/states/${state.code}/districts" -H "X-API-Key: ${currentKey}"`
                       );
                     }}
                   >

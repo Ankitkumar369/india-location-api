@@ -134,6 +134,69 @@ async function handleLogin(req, res) {
   }
 }
 
+// Authenticate JWT Token
+async function authenticateJWT(req, res) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret-for-dev');
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+    return user;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Create API Key - POST /api/auth/api-key
+async function handleCreateApiKey(req, res) {
+  try {
+    // Check if JWT token is provided
+    const user = await authenticateJWT(req, res);
+
+    if (!user) {
+      return sendResponse(res, 401, { error: 'Authentication required. Please login.' });
+    }
+
+    const { name, plan = 'FREE' } = req.body;
+
+    const keyId = 'ak_live_' + uuidv4().replace(/-/g, '').slice(0, 16);
+    const keySecret = uuidv4();
+    const hashedSecret = await bcrypt.hash(keySecret, 10);
+
+    const apiKey = await prisma.apiKey.create({
+      data: {
+        keyId,
+        keySecret: hashedSecret,
+        name: name || 'My API Key',
+        plan,
+        rateLimit: getRateLimitForPlan(plan),
+        userId: user.id
+      }
+    });
+
+    sendResponse(res, 201, {
+      keyId: apiKey.keyId,
+      keySecret,
+      name: apiKey.name,
+      plan: apiKey.plan,
+      rateLimit: apiKey.rateLimit
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+}
+
+function getRateLimitForPlan(plan) {
+  const limits = { FREE: 100, STARTER: 1000, PREMIUM: 10000, UNLIMITED: 1000000 };
+  return limits[plan] || 100;
+}
+
 // Get States - GET /api/v1/states
 async function handleGetStates(req, res) {
   const apiKey = await authenticate(req, res);
