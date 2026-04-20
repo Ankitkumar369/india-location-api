@@ -156,7 +156,6 @@ async function authenticateJWT(req, res) {
 // Create API Key - POST /api/auth/api-key
 async function handleCreateApiKey(req, res) {
   try {
-    // Check if JWT token is provided
     const user = await authenticateJWT(req, res);
 
     if (!user) {
@@ -197,6 +196,12 @@ function getRateLimitForPlan(plan) {
   return limits[plan] || 100;
 }
 
+// Extract route parameter from URL
+function extractRouteParam(url, pattern) {
+  const match = url.match(pattern);
+  return match ? match[1] : null;
+}
+
 // Get States - GET /api/v1/states
 async function handleGetStates(req, res) {
   const apiKey = await authenticate(req, res);
@@ -227,10 +232,14 @@ async function handleGetDistricts(req, res) {
   const apiKey = await authenticate(req, res);
   if (!apiKey) return;
 
-  const { code } = req.query;
+  const stateCode = extractRouteParam(req.url, /\/api\/v1\/states\/([^\/]+)\/districts/);
+
+  if (!stateCode) {
+    return sendResponse(res, 400, { error: 'State code is required.' });
+  }
 
   try {
-    const state = await prisma.state.findFirst({ where: { code } });
+    const state = await prisma.state.findFirst({ where: { code: stateCode } });
     if (!state) {
       return sendResponse(res, 404, { error: 'State not found.' });
     }
@@ -243,12 +252,89 @@ async function handleGetDistricts(req, res) {
 
     sendResponse(res, 200, {
       state: state.name,
+      stateCode: state.code,
       count: districts.length,
       data: districts.map(d => ({
         id: d.id,
         name: d.name,
         code: d.code,
         subDistrictCount: d._count.subDistricts
+      }))
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+}
+
+// Get Sub-Districts - GET /api/v1/districts/:code/subdistricts
+async function handleGetSubDistricts(req, res) {
+  const apiKey = await authenticate(req, res);
+  if (!apiKey) return;
+
+  const districtCode = extractRouteParam(req.url, /\/api\/v1\/districts\/([^\/]+)\/subdistricts/);
+
+  if (!districtCode) {
+    return sendResponse(res, 400, { error: 'District code is required.' });
+  }
+
+  try {
+    const district = await prisma.district.findFirst({ where: { code: districtCode } });
+    if (!district) {
+      return sendResponse(res, 404, { error: 'District not found.' });
+    }
+
+    const subDistricts = await prisma.subDistrict.findMany({
+      where: { districtId: district.id },
+      include: { _count: { select: { villages: true } } },
+      orderBy: { name: 'asc' }
+    });
+
+    sendResponse(res, 200, {
+      district: district.name,
+      districtCode: district.code,
+      count: subDistricts.length,
+      data: subDistricts.map(sd => ({
+        id: sd.id,
+        name: sd.name,
+        code: sd.code,
+        villageCount: sd._count.villages
+      }))
+    });
+  } catch (error) {
+    handleError(res, error);
+  }
+}
+
+// Get Villages - GET /api/v1/subdistricts/:code/villages
+async function handleGetVillages(req, res) {
+  const apiKey = await authenticate(req, res);
+  if (!apiKey) return;
+
+  const subDistrictCode = extractRouteParam(req.url, /\/api\/v1\/subdistricts\/([^\/]+)\/villages/);
+
+  if (!subDistrictCode) {
+    return sendResponse(res, 400, { error: 'Sub-district code is required.' });
+  }
+
+  try {
+    const subDistrict = await prisma.subDistrict.findFirst({ where: { code: subDistrictCode } });
+    if (!subDistrict) {
+      return sendResponse(res, 404, { error: 'Sub-district not found.' });
+    }
+
+    const villages = await prisma.village.findMany({
+      where: { subDistrictId: subDistrict.id },
+      orderBy: { name: 'asc' }
+    });
+
+    sendResponse(res, 200, {
+      subDistrict: subDistrict.name,
+      subDistrictCode: subDistrict.code,
+      count: villages.length,
+      data: villages.map(v => ({
+        id: v.id,
+        name: v.name,
+        code: v.code
       }))
     });
   } catch (error) {
@@ -407,12 +493,24 @@ module.exports = async (req, res) => {
       return handleLogin(req, res);
     }
 
+    if (url === '/api/auth/api-key' && method === 'POST') {
+      return handleCreateApiKey(req, res);
+    }
+
     if (url === '/api/v1/states' && method === 'GET') {
       return handleGetStates(req, res);
     }
 
-    if (url.startsWith('/api/v1/states') && url.includes('/districts') && method === 'GET') {
+    if (url.match(/^\/api\/v1\/states\/[^\/]+\/districts$/) && method === 'GET') {
       return handleGetDistricts(req, res);
+    }
+
+    if (url.match(/^\/api\/v1\/districts\/[^\/]+\/subdistricts$/) && method === 'GET') {
+      return handleGetSubDistricts(req, res);
+    }
+
+    if (url.match(/^\/api\/v1\/subdistricts\/[^\/]+\/villages$/) && method === 'GET') {
+      return handleGetVillages(req, res);
     }
 
     if (url.startsWith('/api/v1/autocomplete') && method === 'GET') {

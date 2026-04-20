@@ -8,13 +8,19 @@ import './App.css';
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Check if user is logged in
-    const token = localStorage.getItem('authToken');
-    const userData = localStorage.getItem('user');
-    if (token && userData) {
-      setUser(JSON.parse(userData));
+    try {
+      const token = localStorage.getItem('authToken');
+      const userData = localStorage.getItem('user');
+      if (token && userData) {
+        setUser(JSON.parse(userData));
+      }
+    } catch (e) {
+      console.error('Error loading user:', e);
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('user');
     }
     setLoading(false);
   }, []);
@@ -27,11 +33,17 @@ function App() {
     localStorage.removeItem('authToken');
     localStorage.removeItem('user');
     localStorage.removeItem('apiKey');
+    localStorage.removeItem('userApiKey');
+    localStorage.removeItem('userApiSecret');
     setUser(null);
   };
 
   if (loading) {
     return <div className="loading-screen">Loading...</div>;
+  }
+
+  if (error) {
+    return <div className="error-screen">{error}</div>;
   }
 
   if (!user) {

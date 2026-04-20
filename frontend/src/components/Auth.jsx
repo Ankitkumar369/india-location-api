@@ -25,6 +25,11 @@ function Auth({ onLogin }) {
 
       if (isLogin) {
         const { token, user } = res.data;
+        if (!token || !user) {
+          setError('Invalid response from server');
+          setLoading(false);
+          return;
+        }
         localStorage.setItem('authToken', token);
         localStorage.setItem('user', JSON.stringify(user));
         onLogin(token, user);
@@ -33,7 +38,8 @@ function Auth({ onLogin }) {
         setIsLogin(true);
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Something went wrong');
+      const errorMsg = err.response?.data?.error || err.message || 'Something went wrong';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }

@@ -27,7 +27,6 @@ function Dashboard() {
     const existingUserApiKey = localStorage.getItem('userApiKey');
 
     if (token && !existingUserApiKey) {
-      // Auto-create API key for logged-in user
       try {
         const res = await axios.post(`${API_BASE}/api/auth/api-key`, {
           name: 'Dashboard Auto-Generated Key'
@@ -41,11 +40,10 @@ function Dashboard() {
         localStorage.setItem('userApiKey', newKey);
         localStorage.setItem('userApiSecret', newSecret);
         setUserApiKey(newKey);
-
-        // Also save to apiKey for dashboard use
         setApiKey(newKey);
       } catch (error) {
         console.error('Failed to create API key:', error);
+        setLoading(false);
       }
     } else if (existingUserApiKey) {
       setUserApiKey(existingUserApiKey);
